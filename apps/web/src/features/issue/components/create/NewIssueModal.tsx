@@ -20,7 +20,12 @@ import {
   stripEmbed,
   type Embeddable,
 } from '@/components/common/editor/attachmentEmbed';
-import { DESCRIPTION_SECTION, OTHER_SECTION, fieldSectionId } from '../../utils/bodySections';
+import {
+  DESCRIPTION_SECTION,
+  OTHER_SECTION,
+  fieldSection,
+  fieldSectionId,
+} from '../../utils/bodySections';
 import { hasFieldValue } from '../../utils/fieldValues';
 import EstimatePill from '../fields/EstimatePill';
 import IssueCustomFieldPill from '../fields/IssueCustomFieldPill';
@@ -104,6 +109,7 @@ export default function NewIssueModal({
   const [dueDate, setDueDate] = useState('');
   const [labelIds, setLabelIds] = useState<number[]>(defaults.labelIds ?? []);
   const [error, setError] = useState<string | null>(null);
+  const [missingShown, setMissingShown] = useState(false);
   const [saving, setSaving] = useState(false);
   const { fullscreen, onToggleFullscreen } = useModalFullscreen();
 
@@ -241,6 +247,15 @@ export default function NewIssueModal({
   }
 
   async function submit() {
+    if (missingRequired.length > 0) {
+      setMissingShown(true);
+      // A body field can be in a section the switcher does not show.
+      const inBody = missingRequired.find((d) => d.showInBody);
+      if (inBody) {
+        setBodySection(inBody.fieldType === 'markdown' ? fieldSection(inBody.id) : OTHER_SECTION);
+      }
+      return;
+    }
     setSaving(true);
     setError(null);
     const filled = fieldDefs.flatMap((def) => {
@@ -337,7 +352,7 @@ export default function NewIssueModal({
         active.contains(titleRef.current);
       if (!isTitleFocused && !isDialogFocused) return;
       e.preventDefault();
-      if (saving || !title.trim() || missingRequired.length > 0) return;
+      if (saving || !title.trim()) return;
       void submit();
     }
     document.addEventListener('keydown', onKeyDown);
@@ -528,8 +543,8 @@ export default function NewIssueModal({
         </div>
 
         {errorMessage && <p className="mt-3 text-xs text-destructive">{errorMessage}</p>}
-        {missingRequired.length > 0 && (
-          <p className="mt-3 text-xs text-muted-foreground">
+        {missingShown && missingRequired.length > 0 && (
+          <p role="alert" className="mt-3 text-xs text-destructive">
             {t('requiredFieldsMissing', { names: missingRequired.map((d) => d.name).join(', ') })}
           </p>
         )}
@@ -542,11 +557,7 @@ export default function NewIssueModal({
             onAnnotate={annotateAttachment}
             onRemove={removeAttachment}
           />
-          <Button
-            className="ms-auto"
-            disabled={saving || !title.trim() || missingRequired.length > 0}
-            onClick={submit}
-          >
+          <Button className="ms-auto" disabled={saving || !title.trim()} onClick={submit}>
             {t('submit')}
           </Button>
         </div>
