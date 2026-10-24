@@ -378,7 +378,9 @@ need no quotes. Your own `command` goes to `sh -c`, so write it as POSIX shell.
 On Windows a preset also runs directly. A CLI that npm installed is a `.cmd` file, which
 only `cmd.exe` can start, so the runner starts what that file starts: the CLI's own
 executable, or the interpreter it names with the CLI's script. The timeout and a stopped
-chat answer end the command with `taskkill /t`.
+chat answer end the command with `taskkill /t`. `taskkill` does not reach a process whose
+parent has already exited. If such a process keeps the output of the command open, the
+timeout or the stop ends only the wait for that output, and the process keeps running.
 
 Your own `command` on Windows needs WSL2. It goes to `sh -c`, and an `sh` on Windows, such
 as the one from Git for Windows, starts the command in a way that `taskkill` cannot end, so

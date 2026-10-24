@@ -30,6 +30,9 @@ export interface Outcome {
 const OUTPUT_LIMIT = 8000;
 const ERROR_LIMIT = 400;
 
+// How long the output of a command that was ended on Windows is still read after it exits.
+const OUTPUT_GRACE_MS = 1000;
+
 // Applied as the output arrives, so a command that prints for half an hour does not buffer
 // all of it to have everything but the last few kilobytes thrown away.
 function tail(text: string, limit: number): string {
@@ -111,12 +114,27 @@ export async function execute(
     windowsHide: true,
   });
 
-  // Windows frees the pid when the command exits, while a child it left may still hold
-  // stdout open; taskkill would then reach whatever process got the pid next.
-  const pidReleased = () =>
-    process.platform === 'win32' && (child.exitCode !== null || child.signalCode !== null);
+  // Windows frees the pid when the command exits, and taskkill would then reach whatever
+  // process got it next. taskkill also finds a tree through the parents that still run, so
+  // a process that outlived its parent is out of its reach and can hold stdout open for as
+  // long as it runs. After a timeout or a stop on Windows, the runner therefore stops
+  // reading the output shortly after the command exits.
+  const stopReading = () => {
+    setTimeout(() => {
+      child.stdout.destroy();
+      child.stderr.destroy();
+    }, OUTPUT_GRACE_MS).unref();
+  };
   const kill = () => {
-    if (child.pid !== undefined && !pidReleased()) killGroup(child.pid);
+    if (child.pid === undefined) return;
+    if (process.platform !== 'win32') {
+      killGroup(child.pid);
+    } else if (child.exitCode === null && child.signalCode === null) {
+      killGroup(child.pid);
+      child.once('exit', stopReading);
+    } else {
+      stopReading();
+    }
   };
   let timedOut = false;
   const timer = setTimeout(() => {
