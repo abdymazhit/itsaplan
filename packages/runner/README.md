@@ -375,23 +375,19 @@ Without a session the server sends the last 20 messages of the conversation as p
 macOS and Linux need nothing else. The runner starts a preset directly, so its arguments
 need no quotes. Your own `command` goes to `sh -c`, so write it as POSIX shell.
 
-On Windows a preset also runs directly. A CLI that npm installed is a `.cmd` file, which
-only `cmd.exe` can start, so the runner starts what that file starts: the CLI's own
-executable, or the interpreter it names with the CLI's script. The timeout and a stopped
-chat answer end the command with `taskkill /t`. `taskkill` does not reach a process whose
-parent has already exited. If such a process keeps the output of the command open, the
-timeout or the stop ends only the wait for that output, and the process keeps running.
+On Windows, the runner also starts a preset directly, including a CLI that npm installed.
+The timeout and a stopped chat answer end the command and the processes that it started. A
+process that still runs after its parent process stopped is not ended.
 
-Your own `command` on Windows needs WSL2. It goes to `sh -c`, and an `sh` on Windows, such
-as the one from Git for Windows, starts the command in a way that `taskkill` cannot end, so
-the timeout would not stop it:
+Your own `command` on Windows needs WSL2. The timeout cannot stop a command that an `sh` on
+Windows starts.
 
 ```powershell
 wsl --install     # installs Ubuntu, then reboot
 ```
 
-With WSL, do everything else in WSL: Node, the coding agent, the config file, and the
-runner.
+If you use WSL, keep all the other parts in WSL: Node, the coding agent, the config file,
+and the runner.
 
 - Keep the working directory in the WSL file system (`~/work/repo`), not under
   `/mnt/c/...`. Access between the two file systems is slow.
