@@ -692,6 +692,116 @@ describe('custom-fields', () => {
       expect((await issues(asOwner).get({ query: {} })).data!.length).toBe(0);
     });
 
+    it('refuses a member value that is not a user id, on create and on update', async () => {
+      const { asOwner, bug, severity, steps, columnId } = await setupRequired();
+      const me = (await asOwner.me.get()).data!;
+      if (!me.authenticated) throw new Error('the owner is signed in');
+      const ownerId = me.user.id;
+      const owner = (
+        await fields(asOwner).post({
+          issueTypeId: bug.id,
+          name: 'Owner',
+          fieldType: 'member',
+          required: true,
+        })
+      ).data!;
+      const required = [
+        { fieldId: severity.id, optionIds: [severity.options[0].id] },
+        { fieldId: steps.id, value: 'Open the map' },
+      ];
+
+      for (const value of [false, 42]) {
+        const res = await issues(asOwner).post({
+          typeId: bug.id,
+          columnId,
+          title: 'Crash',
+          fields: [...required, { fieldId: owner.id, value }],
+        });
+        expect(res.status).toBe(400);
+      }
+      expect((await issues(asOwner).get({ query: {} })).data!.length).toBe(0);
+
+      const issueId = (
+        await issues(asOwner).post({
+          typeId: bug.id,
+          columnId,
+          title: 'Crash',
+          fields: [...required, { fieldId: owner.id, value: ownerId }],
+        })
+      ).data!.id;
+      const field = asOwner.issues({ issueId }).fields({ fieldId: owner.id });
+      expect((await field.put({ value: false })).status).toBe(400);
+      expect((await field.put({ value: 42 })).status).toBe(400);
+      expect((await issueValue(asOwner, issueId, owner.id))?.value).toBe(ownerId);
+    });
+
+    it('refuses an option given twice without creating the issue or changing the selection', async () => {
+      const { asOwner, bug, severity, steps, columnId } = await setupRequired();
+      const platforms = (
+        await fields(asOwner).post({
+          issueTypeId: bug.id,
+          name: 'Platforms',
+          fieldType: 'multi_select',
+          options: ['iOS', 'Android'],
+          required: true,
+        })
+      ).data!;
+      const [ios, android] = platforms.options.map((o) => o.id);
+      const required = [
+        { fieldId: severity.id, optionIds: [severity.options[0].id] },
+        { fieldId: steps.id, value: 'Open the map' },
+      ];
+
+      const twice = await issues(asOwner).post({
+        typeId: bug.id,
+        columnId,
+        title: 'Crash',
+        fields: [...required, { fieldId: platforms.id, optionIds: [ios, ios] }],
+      });
+      expect(twice.status).toBe(400);
+      expect((await issues(asOwner).get({ query: {} })).data!.length).toBe(0);
+
+      const issueId = (
+        await issues(asOwner).post({
+          typeId: bug.id,
+          columnId,
+          title: 'Crash',
+          fields: [...required, { fieldId: platforms.id, optionIds: [ios] }],
+        })
+      ).data!.id;
+      const field = asOwner.issues({ issueId }).fields({ fieldId: platforms.id });
+      expect((await field.put({ optionIds: [android, android] })).status).toBe(400);
+      expect((await issueValue(asOwner, issueId, platforms.id))?.optionIds).toEqual([ios]);
+    });
+
+    it('refuses a field given twice, or a number field given a boolean, before creating', async () => {
+      const { asOwner, bug, severity, steps, columnId } = await setupRequired();
+      const build = (
+        await fields(asOwner).post({ issueTypeId: bug.id, name: 'Build', fieldType: 'number' })
+      ).data!;
+      const required = [
+        { fieldId: severity.id, optionIds: [severity.options[0].id] },
+        { fieldId: steps.id, value: 'Open the map' },
+      ];
+
+      const twice = await issues(asOwner).post({
+        typeId: bug.id,
+        columnId,
+        title: 'Crash',
+        fields: [...required, { fieldId: steps.id, value: 'Open the map again' }],
+      });
+      expect(twice.status).toBe(400);
+
+      const boolean = await issues(asOwner).post({
+        typeId: bug.id,
+        columnId,
+        title: 'Crash',
+        fields: [...required, { fieldId: build.id, value: true }],
+      });
+      expect(boolean.status).toBe(400);
+      expect((await issues(asOwner).get({ query: {} })).data!.length).toBe(0);
+    });
+
     it('keeps a required value from being cleared on an existing issue', async () => {
       const { asOwner, bug, severity, steps, columnId } = await setupRequired();
       const issueId = (

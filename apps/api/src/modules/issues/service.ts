@@ -1612,14 +1612,15 @@ function hasFieldValue(field: CustomFieldRow, input: FieldValueInput): boolean {
   return input.value != null && input.value !== '';
 }
 
-// Rejects a value the field cannot hold, so a create with fields fails before the
-// issue exists.
+// Rejects every value the write would fail on or store as empty: createIssue writes
+// the fields after the issue is committed.
 async function assertFieldInput(
   projectId: number,
   field: CustomFieldRow,
   input: FieldValueInput,
 ): Promise<void> {
   const value = input.value;
+  const empty = value == null || value === '';
   switch (field.fieldType) {
     case 'url':
       // Stored as text, but must hold an http(s) URL.
@@ -1628,25 +1629,30 @@ async function assertFieldInput(
       }
       break;
     case 'number':
-      if (value != null && value !== '' && !Number.isFinite(Number(value))) {
+      if (!empty && (typeof value === 'boolean' || !Number.isFinite(Number(value)))) {
         throw new HttpError(400, 'Invalid number');
       }
       break;
     case 'member':
-      if (typeof value === 'string' && value !== '') {
-        await assertFieldMember(projectId, field.memberScope, value);
-      }
+      if (empty) break;
+      if (typeof value !== 'string') throw new HttpError(400, 'Invalid member');
+      await assertFieldMember(projectId, field.memberScope, value);
       break;
     case 'select':
-    case 'multi_select':
+    case 'multi_select': {
+      const optionIds = input.optionIds ?? [];
+      if (new Set(optionIds).size !== optionIds.length) {
+        throw new HttpError(400, 'An option is given twice');
+      }
       // An option must be one of this field's own: the issue_field_option foreign key
       // only requires it to exist somewhere.
-      for (const optionId of input.optionIds ?? []) {
+      for (const optionId of optionIds) {
         if (!field.options.some((o) => o.id === optionId)) {
           throw new HttpError(400, 'Option does not belong to this field');
         }
       }
       break;
+    }
     case 'date':
       parseDate(value);
       break;
@@ -1672,6 +1678,9 @@ async function resolveNewIssueFields(
   if (values.length === 0) return [];
   const fields = await listCustomFields(projectId, { issueTypeId: typeId ?? undefined });
   const resolved: { field: CustomFieldRow; value: FieldValueInput }[] = [];
+  if (new Set(values.map((v) => v.fieldId)).size !== values.length) {
+    throw new HttpError(400, 'A custom field is given twice');
+  }
   for (const { fieldId, ...value } of values) {
     const field = fields.find((f) => f.id === fieldId);
     if (!field) throw new HttpError(400, `Custom field ${fieldId} does not apply to this issue`);
