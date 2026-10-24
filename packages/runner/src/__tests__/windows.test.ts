@@ -69,12 +69,16 @@ describe('resolveCommand', () => {
   });
 
   it('starts the interpreter a script shim names, with the script', async () => {
+    await mkdir(join(dir, 'node-bin'));
+    await writeFile(join(dir, 'node-bin', 'node.exe'), '');
     await writeFile(
       join(dir, 'codex.cmd'),
       scriptShim('node', String.raw`node_modules\@openai\codex\bin\codex.js`),
     );
-    expect(resolveCommand('codex', args, { PATH: dir }, 'win32')).toEqual([
-      'node',
+    expect(
+      resolveCommand('codex', args, { PATH: `${dir};${join(dir, 'node-bin')}` }, 'win32'),
+    ).toEqual([
+      join(dir, 'node-bin', 'node.exe'),
       [join(dir, 'node_modules/@openai/codex/bin/codex.js'), ...args],
     ]);
   });
@@ -104,12 +108,16 @@ describe('resolveCommand', () => {
   });
 
   it('starts a script with no extension through its interpreter, with the shebang arguments', async () => {
+    await mkdir(join(dir, 'node-bin'));
+    await writeFile(join(dir, 'node-bin', 'node.exe'), '');
     await writeFile(
       join(dir, 'tool.cmd'),
       scriptShim('node', String.raw`node_modules\tool\bin\tool`, '--no-warnings'),
     );
-    expect(resolveCommand('tool', args, { PATH: dir }, 'win32')).toEqual([
-      'node',
+    expect(
+      resolveCommand('tool', args, { PATH: `${dir};${join(dir, 'node-bin')}` }, 'win32'),
+    ).toEqual([
+      join(dir, 'node-bin', 'node.exe'),
       ['--no-warnings', join(dir, 'node_modules/tool/bin/tool'), ...args],
     ]);
   });
@@ -137,8 +145,26 @@ describe('resolveCommand', () => {
     expect(() => resolveCommand('claude', args, { PATH: dir }, 'win32')).toThrow(/cmd\.exe/);
   });
 
-  it('leaves a command that is not on the path to fail as it would', () => {
-    expect(resolveCommand('claude', args, { PATH: dir }, 'win32')).toEqual(['claude', args]);
+  it('reads a quoted directory on the path', async () => {
+    await mkdir(join(dir, 'bin'));
+    await writeFile(join(dir, 'bin', 'claude.exe'), '');
+    expect(resolveCommand('claude', args, { PATH: `"${join(dir, 'bin')}"` }, 'win32')[0]).toBe(
+      join(dir, 'bin', 'claude.exe'),
+    );
+  });
+
+  it('refuses a command that is not on the path', () => {
+    expect(() => resolveCommand('claude', args, { PATH: dir }, 'win32')).toThrow(/not on PATH/);
+  });
+
+  it('refuses a script shim whose interpreter is not on the path', async () => {
+    await writeFile(
+      join(dir, 'codex.cmd'),
+      scriptShim('node', String.raw`node_modules\codex\cli.js`),
+    );
+    expect(() => resolveCommand('codex', args, { PATH: dir }, 'win32')).toThrow(
+      /node is not on PATH/,
+    );
   });
 });
 

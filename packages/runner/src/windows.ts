@@ -12,8 +12,9 @@ export function resolveCommand(
   platform: NodeJS.Platform = process.platform,
 ): [string, string[]] {
   if (platform !== 'win32') return [bin, args];
+  // A bare name would be looked up in the working directory first, and the agent writes there.
   const found = findOnPath(bin, env);
-  if (!found) return [bin, args];
+  if (!found) throw new Error(`${bin} is not on PATH.`);
   const ext = extname(found).toLowerCase();
   if (ext !== '.cmd' && ext !== '.bat') return [found, args];
   const shim = parseShim(found);
@@ -40,7 +41,8 @@ function envValue(env: Record<string, string | undefined>, name: string): string
 function findOnPath(bin: string, env: Record<string, string | undefined>): string | null {
   const exts = (envValue(env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
   const names = extname(bin) ? [bin] : exts.map((ext) => bin + ext.toLowerCase());
-  for (const dir of (envValue(env, 'PATH') ?? '').split(';').filter(Boolean)) {
+  const dirs = (envValue(env, 'PATH') ?? '').split(';').map((dir) => dir.replace(/"/g, ''));
+  for (const dir of dirs.filter(Boolean)) {
     for (const name of names) {
       const path = join(dir, name);
       if (existsSync(path)) return path;

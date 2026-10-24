@@ -57,7 +57,9 @@ function childEnv(config: RunnerConfig, task: Task): Record<string, string> {
 // group, so taskkill ends the process tree instead.
 function killGroup(pid: number): void {
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], {
+    // A bare name is looked up in the current directory first, and the agent can write there.
+    const taskkill = `${process.env.SystemRoot ?? 'C:\\Windows'}\\System32\\taskkill.exe`;
+    spawnSync(taskkill, ['/pid', String(pid), '/t', '/f'], {
       stdio: 'ignore',
       windowsHide: true,
     });
